@@ -2,7 +2,7 @@
 // @author
 // @description 刮削：支持，弹幕：支持，嗅探：支持
 // @dependencies: axios, cheerio
-// @version 1.2.5
+// @version 1.2.6
 // @downloadURL https://gh-proxy.org/https://github.com/Silent1566/OmniBox-Spider/raw/refs/heads/main/影视/网盘/木偶.js
 
 // 引入 OmniBox SDK
@@ -765,14 +765,8 @@ async function detail(params, context) {
 
     let playSources = [];
 
-    const driveTypeCountMap = {};
-    for (const shareURL of panUrls) {
-      const driveInfo = await OmniBox.getDriveInfoByShareURL(shareURL);
-      const displayName = driveInfo.displayName || "未知网盘";
-      driveTypeCountMap[displayName] = (driveTypeCountMap[displayName] || 0) + 1;
-    }
-
     const driveTypeCurrentIndexMap = {};
+    const driveTypeCountMap = {};
 
     // ==================== 并行处理网盘链接 ====================
     const panUrlTasks = panUrls.map(async (shareURL) => {
@@ -786,6 +780,7 @@ async function detail(params, context) {
           await setCachedJSON(driveInfoCacheKey, driveInfo, MUOU_CACHE_EX_SECONDS);
         }
         let displayName = driveInfo.displayName || "未知网盘";
+        driveTypeCountMap[displayName] = (driveTypeCountMap[displayName] || 0) + 1;
 
         const totalCount = driveTypeCountMap[displayName] || 0;
         if (totalCount > 1) {
@@ -999,8 +994,6 @@ async function detail(params, context) {
 
           const formattedFileId = fileId ? `${shareURL}|${fileId}|${videoId}` : "";
 
-          OmniBox.log("info", formattedFileId)
-
           let matchedMapping = null;
           if (scrapeData && videoMappings && Array.isArray(videoMappings) && videoMappings.length > 0) {
             for (const mapping of videoMappings) {
@@ -1009,7 +1002,6 @@ async function detail(params, context) {
                 const newFileName = buildScrapedFileName(scrapeData, mapping, fileName);
                 if (newFileName && newFileName !== fileName) {
                   fileName = newFileName;
-                  OmniBox.log("info", `应用刮削文件名: ${file.file_name} -> ${fileName}`);
                 }
               }
             }
