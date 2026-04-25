@@ -2,7 +2,7 @@
 // @author 梦
 // @description 刮削：未接入，弹幕：未接入，嗅探：不需要（直链优先，支持网盘线路展开）
 // @dependencies
-// @version 1.3.4
+// @version 1.3.5
 // @downloadURL https://gh-proxy.org/https://github.com/Silent1566/OmniBox-Spider/raw/refs/heads/main/影视/采集/LIBVIO.js
 
 const http = require("http");
@@ -633,6 +633,18 @@ function buildPlayUrl(rawUrl = "") {
     return fixUrl(value);
 }
 
+function isDirectMediaUrl(url = "") {
+    const value = String(url || "").trim();
+    if (!/^https?:\/\//i.test(value)) return false;
+    try {
+        const target = new URL(value);
+        const pathname = target.pathname.toLowerCase();
+        return /\.(m3u8|mp4|m4v|m4a|mp3|flv|avi|mkv|mov|webm)(?:$|\?)/i.test(pathname) || /\.(m3u8|mp4|m4v|m4a|mp3|flv|avi|mkv|mov|webm)$/i.test(value.toLowerCase());
+    } catch {
+        return /\.(m3u8|mp4|m4v|m4a|mp3|flv|avi|mkv|mov|webm)(?:$|\?)/i.test(value.toLowerCase());
+    }
+}
+
 function emptyPlay(flag = "LIBVIO") {
     return { parse: 0, flag, urls: [] };
 }
@@ -863,7 +875,7 @@ async function play(params, context) {
 
         const player = JSON.parse(playerJson);
         const realUrl = buildPlayUrl(decodePlayerUrl(player.url, player.encrypt));
-        if (realUrl && /^https?:\/\//i.test(realUrl)) {
+        if (realUrl && isDirectMediaUrl(realUrl)) {
             logInfo("play 直链完成", { playPageUrl, from: player.from, finalUrl: realUrl });
             return {
                 parse: 0,
@@ -877,7 +889,7 @@ async function play(params, context) {
             };
         }
 
-        logInfo("play 使用嗅探兜底", { playPageUrl, from: player.from, decodedUrl: realUrl });
+        logInfo("play 使用嗅探兜底", { playPageUrl, from: player.from, decodedUrl: realUrl, encrypt: player.encrypt, rawUrl: player.url });
         return {
             parse: 1,
             flag: playFlag,
