@@ -329,24 +329,33 @@ async function category(params = {}) {
 }
 
 async function detail(params = {}) {
-  OmniBox.log('info', `[wbbb][detail] params=${JSON.stringify(params)}`);
+  OmniBox.log('info', `[wbbb][detail][01] 入口参数 params=${JSON.stringify(params)}`);
   try {
+    OmniBox.log('info', '[wbbb][detail][02] 开始解析视频 ID');
     let ids = [];
     if (Array.isArray(params.id)) ids = params.id;
     else if (Array.isArray(params.ids)) ids = params.ids;
     else if (params.ids) ids = String(params.ids).split(',').map((s) => s.trim()).filter(Boolean);
     else if (params.id) ids = String(params.id).split(',').map((s) => s.trim()).filter(Boolean);
     else if (params.vod_id) ids = String(params.vod_id).split(',').map((s) => s.trim()).filter(Boolean);
-    // 新增对 videoId / video_id 的兼容
     else if (params.videoId) ids = String(params.videoId).split(',').map((s) => s.trim()).filter(Boolean);
     else if (params.video_id) ids = String(params.video_id).split(',').map((s) => s.trim()).filter(Boolean);
+    OmniBox.log('info', `[wbbb][detail][03] 解析到 ids=${JSON.stringify(ids)}`);
 
+    if (!ids.length) {
+      OmniBox.log('warn', '[wbbb][detail][04] 未解析到任何视频 ID，直接返回空列表');
+      return { list: [] };
+    }
 
     const list = [];
     for (const rawId of ids) {
       const mediaId = String(rawId).trim();
-      OmniBox.log('info', `[wbbb][detail] fetch detail for ${mediaId}`);
-      const html = await getHtml(`/detail/${mediaId}.html`);
+      const detailPath = `/detail/${mediaId}.html`;
+      OmniBox.log('info', `[wbbb][detail][05] 准备请求详情页 mediaId=${mediaId}, url=${SITE.host}${detailPath}`);
+      const html = await getHtml(detailPath);
+      OmniBox.log('info', `[wbbb][detail][06] 详情页请求完成 mediaId=${mediaId}, htmlLength=${String(html || '').length}, hasVplay=${String(html || '').includes('/vplay/')}`);
+
+      OmniBox.log('info', '[wbbb][detail][07] 开始解析基础信息：标题/封面/简介/标签/导演/主演');
       const vod_name = stripTags(pickMatch(html, /<h1[^>]*>([\s\S]*?)<\/h1>/, 1, ''));
       const vod_pic = absUrl(pickMatch(html, /<div class="module-item-pic">[\s\S]*?<img[^>]+data-original="([^\"]+)"/, 1, ''))
         || absUrl(pickMatch(html, /<div class="module-item-pic">[\s\S]*?<img[^>]+(?:data-src|src)="([^\"]+)"/, 1, ''));
@@ -358,17 +367,31 @@ async function detail(params = {}) {
       const vod_remarks = stripTags(pickMatch(html, /<div class="module-item-note">([\s\S]*?)<\/div>/, 1, '')) || stripTags(pickMatch(html, /\u66f4\u65b0\u81f3[^<\s]+/, 0, ''));
       const vod_director = cleanSlashText(pickMatch(html, /\u5bfc\u6f14：[\s\S]*?<div[^>]*class="module-info-item-content">([\s\S]*?)<\/div>/, 1, ''));
       const vod_actor = cleanSlashText(pickMatch(html, /\u4e3b\u6f14：[\s\S]*?<div[^>]*class="module-info-item-content">([\s\S]*?)<\/div>/, 1, ''));
+      OmniBox.log('info', `[wbbb][detail][08] 基础信息完成 mediaId=${mediaId}, name=${vod_name || '空'}, pic=${vod_pic ? '有' : '空'}, contentLen=${vod_content.length}, tags=${tagLinks.length}`);
 
+      OmniBox.log('info', '[wbbb][detail][09] 开始解析播放线路 tabs');
       const tabs = parseTabs(html);
+      OmniBox.log('info', `[wbbb][detail][10] tabs 解析完成 count=${tabs.length}, tabs=${tabs.join(' / ') || '空'}`);
+
+      OmniBox.log('info', '[wbbb][detail][11] 开始解析播放分组 groups');
       const groups = parsePlayGroups(html);
+      OmniBox.log('info', `[wbbb][detail][12] groups 解析完成 count=${groups.length}, episodeCounts=${groups.map(g => g.length).join('/') || '空'}`);
+
       const playFrom = [];
       const playUrl = [];
+      OmniBox.log('info', '[wbbb][detail][13] 开始组装 vod_play_from / vod_play_url');
       groups.forEach((items, idx) => {
-        const lineName = tabs[idx] || `\u7ebf\u8def${idx + 1}`;
-        if (!items || !items.length) return;
+        const lineName = tabs[idx] || `线路${idx + 1}`;
+        if (!items || !items.length) {
+          OmniBox.log('warn', `[wbbb][detail][13-${idx}] 跳过空播放组 idx=${idx}, lineName=${lineName}`);
+          return;
+        }
         playFrom.push(lineName);
         playUrl.push(items.join('#'));
       });
+      const vodPlayFrom = playFrom.join('$$$');
+      const vodPlayUrl = playUrl.join('$$$');
+      OmniBox.log('info', `[wbbb][detail][14] 播放字段组装完成 fromCount=${playFrom.length}, urlGroupCount=${playUrl.length}, vod_play_url_length=${vodPlayUrl.length}, firstLine=${playFrom[0] || '空'}, firstEpisode=${groups[0]?.[0] || '空'}`);
 
       const vod = {
         videoId: mediaId,
@@ -383,8 +406,8 @@ async function detail(params = {}) {
         vod_actor,
         vod_director,
         vod_content,
-        vod_play_from: playFrom.join('$$$'),
-        vod_play_url: playUrl.join('$$$'),
+        vod_play_from: vodPlayFrom,
+        vod_play_url: vodPlayUrl,
         vod_play_list: playFrom.map((name, idx) => ({
           name,
           url: playUrl[idx] || '',
@@ -394,16 +417,16 @@ async function detail(params = {}) {
           }),
         })),
       };
-      OmniBox.log('info', `[wbbb][detail] parsed mediaId=${mediaId}, name=${vod_name}, tabs=${playFrom.length}, groups=${groups.length}, episodeCounts=${groups.map(g => g.length).join('/')}, playFrom=${vod.vod_play_from}`);
+      OmniBox.log('info', `[wbbb][detail][15] 结果对象完成 mediaId=${mediaId}, has_vod_play_from=${!!vod.vod_play_from}, has_vod_play_url=${!!vod.vod_play_url}, vod_play_list_count=${vod.vod_play_list.length}`);
       if (!vod.vod_play_url) {
-        OmniBox.log('warn', `[wbbb][detail] no vod_play_url for ${mediaId}, htmlLength=${html.length}, hasVplay=${html.includes('/vplay/')}`);
+        OmniBox.log('warn', `[wbbb][detail][16] 未生成 vod_play_url：htmlLength=${html.length}, hasVplay=${html.includes('/vplay/')}, tabs=${tabs.length}, groups=${groups.length}`);
       }
       list.push(vod);
     }
-    OmniBox.log('info', `[wbbb][detail] total items=${list.length}, first play_from=${list[0]?.vod_play_from?.split('$$$')[0]||''}`);
+    OmniBox.log('info', `[wbbb][detail][17] 即将返回 list，总数=${list.length}, firstName=${list[0]?.vod_name || '空'}, firstPlayFrom=${list[0]?.vod_play_from || '空'}, firstPlayUrlLen=${list[0]?.vod_play_url?.length || 0}`);
     return { list };
   } catch (e) {
-    OmniBox.log('error', `[wbbb][detail] error=${e.message}`);
+    OmniBox.log('error', `[wbbb][detail][ERR] error=${e.message}, stack=${e.stack || ''}`);
     return { list: [], error: e.message || String(e) };
   }
 }
